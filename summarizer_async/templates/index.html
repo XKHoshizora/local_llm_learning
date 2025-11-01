@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <title>文本摘要生成器（Ajax 版）</title>
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .summary-section {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>文本摘要生成器</h1>
+        <form method="post">
+            <label for="text-input">输入文本:</label><br>
+            <textarea id="text-input" name="original_text" rows="10" cols="80" placeholder="在此处输入文本" required>{{ original_text|default('') }}</textarea><br>
+            <button type="submit" id="submit-btn">生成摘要</button>
+        </form>
+
+        <div class="summary-section" id="summary-section" style="display: none;">
+            <h2>生成的摘要:</h2>
+            <p id="result-text"></p>
+        </div>
+    </div>
+
+    <script>
+        document.querySelector("form").addEventListener("submit", async function(event) {
+            event.preventDefault();  // 阻止表单的默认提交行为
+
+            // 获取 HTML 元素
+            const submitBtn = document.getElementById("submit-btn");
+            const textInput = document.getElementById("text-input");
+            const summarySection = document.getElementById("summary-section");
+            const resultText = document.getElementById("result-text");
+
+            submitBtn.disabled = true;
+            summarySection.style.display = "block";
+            resultText.innerText = "正在生成摘要，请稍候...";
+
+            // 按下按钮后，发送 Ajax 请求到后端 API
+            try {
+                // 发送请求并获取摘要
+                const url = "/api/summarize";  // 后端 API 端点
+                const input_data = { text: textInput.value };  // 输入数据
+                const options = {  // 请求选项
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(input_data)
+                };
+                const response = await fetch(url, options);  // 发送请求
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result_data = await response.json();  // 解析响应
+                resultText.innerText = result_data.result;  // 显示摘要
+            } catch (error) {
+                console.error("Error:", error);
+                resultText.innerText = "生成摘要时出错，请重试。";
+            } finally {
+                submitBtn.disabled = false;  // 重新启用按钮
+            }
+
+        });
+    </script>
+</body>
+</html>

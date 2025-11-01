@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <title>文本摘要生成器（PyScript 版）</title>
+
+    <!-- PyScript 必需的 CSS 和 JS -->
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.11.1/core.css">
+    <script type="module" src="https://pyscript.net/releases/2024.11.1/core.js"></script>
+
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .summary-section {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+
+        #text-input {
+            width: 100%;
+            padding: 10px;
+            font-family: inherit;
+        }
+
+        button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+
+</head>
+<body>
+    <div class="container">
+        <h1>文本摘要生成器</h1>
+        <form id="summary-form" method="post">
+            <label for="text-input">输入文本:</label><br>
+            <textarea id="text-input" name="original_text" rows="10" cols="80" placeholder="在此处输入文本" required>{{ original_text|default('') }}</textarea><br>
+            <button type="button" id="submit-btn">生成摘要</button>
+        </form>
+
+        <div class="summary-section" id="summary-section" style="display: none;">
+            <h2>生成的摘要:</h2>
+            <p id="result-text"></p>
+        </div>
+    </div>
+
+    <script type="py">
+        # PyScript 代码将在此处运行
+        from pyscript import document, fetch
+        from pyodide.ffi import create_proxy
+        import json
+
+        # 获取 HTML 元素
+        form = document.getElementById("summary-form")
+        submit_btn = document.getElementById("submit-btn")
+        text_input = document.getElementById("text-input")
+        summary_section = document.getElementById("summary-section")
+        result_text = document.getElementById("result-text")
+
+        async def handle_submit(event):
+            """处理表单提交事件"""
+            event.preventDefault()  # 阻止表单的默认提交行为
+
+            submit_btn.disabled = True
+            summary_section.style.display = "block"
+            result_text.innerText = "正在生成摘要，请稍候..."
+
+            try:
+                # 发送 Ajax请求到后端 API
+                response = await fetch(
+                    "/api/summarize",
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                    body=json.dumps({ "text": text_input.value })
+                )
+
+                if not response.ok:
+                    raise Exception(f"HTTP error! status: {response.status}")
+
+                result_data = await response.json()  # 解析响应
+                result_text.innerText = result_data["result"]  # 显示摘要
+
+            except Exception as error:
+                print("Error:", error)
+                result_text.innerText = "生成摘要时出错，请重试。"
+
+            finally:
+                submit_btn.disabled = False  # 重新启用按钮
+
+        # 绑定到 form 的 submit 事件而不是 button 的 click 事件
+        submit_btn.addEventListener("click", create_proxy(handle_submit))
+    </script>
+</body>
+</html>

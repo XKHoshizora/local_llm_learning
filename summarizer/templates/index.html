@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <title>文本摘要生成器</title>
+</head>
+<body>
+    <div class="container">
+        <h1>文本摘要生成器</h1>
+        <form method="post">
+            <label for="text-input">输入文本:</label><br>
+            <textarea id="text-input" name="original_text" rows="10" cols="80" placeholder="在此处输入文本" required>
+                {{ original_text|default('') }}
+            </textarea><br>
+            <button type="submit">生成摘要</button>
+        </form>
+
+        {% if summary %}
+        <div class="summary-section">
+            <h2>生成的摘要:</h2>
+            <p>{{ summary }}</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
