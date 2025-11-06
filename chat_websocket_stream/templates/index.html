@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+
+    <!-- PyScript 必需的 CSS 和 JS -->
+    <link rel="stylesheet" href="https://pyscript.net/releases/2025.10.3/core.css">
+    <script type="module" src="https://pyscript.net/releases/2025.10.3/core.js"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 2em;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        #chatlog {
+            flex: 1;
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            overflow-y: auto;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-height: calc(100vh - 200px);
+            min-height: 400px;
+        }
+
+        #chatlog::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #chatlog::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        #chatlog::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+
+        #chatlog::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        .input-container {
+            background: white;
+            padding: 15px;
+            border-radius: 15px;
+            display: flex;
+            gap: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+            font-family: inherit;       /* 新增：继承字体 */
+            resize: none;                /* 新增：禁止手动调整大小 */
+            min-height: 48px;           /* 新增：最小高度（约1行） */
+            max-height: 150px;          /* 新增：最大高度（约5-6行） */
+            overflow-y: auto;           /* 新增：超过最大高度后显示滚动条 */
+            line-height: 1.5;           /* 新增：行高 */
+        }
+
+        #user-input:focus {
+            border-color: #667eea;
+        }
+
+        #send-btn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        #send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        #send-btn:active {
+            transform: translateY(0);
+        }
+
+        #send-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 消息样式优化 */
+        #chatlog > div {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+
+</head>
+<body>
+    <h1>🤖 AI 聊天机器人</h1>
+    <div id="chatlog"></div>
+    <div class="input-container">
+        <textarea id="user-input" rows="1" placeholder="在此处输入你的消息..."></textarea>
+        <button id="send-btn">发送</button>
+    </div>
+
+    <script type="py">
+        # PyScript 代码将在此处运行
+        from pyscript import document, window, WebSocket
+        from pyodide.ffi import create_proxy, to_js
+        from js import io  # Socket.IO 客户端
+        from datetime import datetime
+        import html
+        import time
+
+        # 获取 HTML 元素
+        chatlog = document.getElementById("chatlog")
+        user_input = document.getElementById("user-input")
+        send_btn = document.getElementById("send-btn")
+        
+        # 初始化 Socket.IO 接口
+        socket = io()
+
+        # 
+        history_messages = [{
+            "role": "system",
+            "content": "你是一个聊天机器人，请根据用户的问题给出回答。"
+        }]
+
+        # 在 HTML 中添加显示聊天记录的函数
+        def display_message(role, message, message_id=None):
+            """在聊天记录中显示消息"""
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # 根据角色选择背景颜色（区分三种角色）
+            if 'user' in role.lower():
+                background_color = '#e3f2fd'  # 蓝色 - 用户消息
+            elif 'system' in role.lower():
+                background_color = '#fff3e0'  # 橙色 - 系统消息
+            else:
+                background_color = '#e8f5e9'  # 绿色 - AI 模型消息
+
+            # 如果指定了 message_id，说明是流式更新已有消息
+            if message_id:
+                existing_msg = document.getElementById(f'msg-{message_id}')
+                if existing_msg:
+                    existing_msg.innerHTML = html.escape(message)
+                    return message_id
+            
+            # 否则创建新消息
+            if not message_id:
+                message_id = str(int(time.time() * 1000))  # 使用时间戳作为ID
+            
+            # 构建消息 HTML
+            message_html = f"""<div style='margin: 0.5em; padding: 0.5em; background-color: {background_color}; border-radius: 0.5em;'>
+                <strong>{role.capitalize()}</strong> [{timestamp}]<br>
+                <span id='msg-{message_id}'>{html.escape(message)}</span>
+            </div>"""
+            chatlog.innerHTML += message_html
+
+            # 自动滚动到底部
+            chatlog.scrollTop = chatlog.scrollHeight
+
+            return message_id
+
+        # 处理 Socket.IO 事件
+        def on_connect(*args):
+            """连接成功时显示提示"""
+            display_message("*system: ", "已连接到服务器")
+        def on_disconnect(*args):
+            """连接断开时显示提示"""
+            display_message("*system: ", "已断开与服务器的连接")
+        def on_error(event):
+            """处理错误事件"""
+            display_message("*system: ", f"错误: {event}")
+        
+        # 存储当前正在流式输出的消息
+        current_streaming_id = None
+        current_streaming_content = ""
+        
+        def on_bot_stream_start(event):
+            """处理流式输出开始"""
+            global current_streaming_id, current_streaming_content
+            model_name = event.model
+            current_streaming_content = ""
+            # 创建一个空消息占位符
+            current_streaming_id = display_message(f"{model_name}: ", "")
+        
+        def on_bot_stream_chunk(event):
+            """处理流式输出的每个chunk"""
+            global current_streaming_id, current_streaming_content
+            chunk = event.chunk  # 获取当前的文本片段
+            current_streaming_content += chunk
+            # 更新显示
+            display_message("", current_streaming_content, current_streaming_id)
+        
+        def on_bot_stream_end(event):
+            """处理流式输出结束"""
+            global current_streaming_id, current_streaming_content
+            model_name = event.model
+            # 将完整消息添加到历史
+            history_messages.append({
+                "role": "assistant",  # 注意：使用 "assistant" 而不是模型名
+                "content": current_streaming_content
+            })
+            # 重置状态
+            current_streaming_id = None
+            current_streaming_content = ""
+
+        # 绑定事件处理函数
+        socket.on('connect', create_proxy(on_connect))
+        socket.on('disconnect', create_proxy(on_disconnect))
+        socket.on('error', create_proxy(on_error))
+        socket.on('bot_stream_start', create_proxy(on_bot_stream_start))
+        socket.on('bot_stream_chunk', create_proxy(on_bot_stream_chunk))
+        socket.on('bot_stream_end', create_proxy(on_bot_stream_end))
+
+        def handle_send(event):
+            """处理发送按钮的点击事件"""
+            user_message = user_input.value.strip()
+            if user_message:
+                display_message("user: ", user_message)
+                # 将用户消息添加到历史消息中
+                history_messages.append({
+                    "role": "user",
+                    "content": user_message
+                })
+                # 发送用户消息到服务器
+                socket.emit('user_message', to_js({'message': history_messages}))
+                user_input.value = ''
+            else:
+                display_message("*system: ", "请输入消息")
+        
+        # 绑定发送按钮的点击事件
+        send_btn.addEventListener('click', create_proxy(handle_send))
+
+        def handle_keydown(event):
+            """处理用户输入的回车事件"""
+            if event.key == 'Enter' and not event.shiftKey:
+                # Enter（不按Shift）: 发送消息
+                event.preventDefault()  # 阻止默认换行
+                handle_send(event)
+            # Shift+Enter: 自动换行（不做处理）
+        
+        # 绑定用户输入的回车事件
+        user_input.addEventListener('keydown', create_proxy(handle_keydown))
+
+        def auto_resize(event):
+            """自动调整输入框高度"""
+            # 先重置高度为 auto，让浏览器重新计算
+            user_input.style.height = 'auto'
+            # 然后设置为实际内容高度
+            user_input.style.height = f'{user_input.scrollHeight}px'
+        
+        # 绑定 input 事件，每次输入时自动调整高度
+        user_input.addEventListener('input', create_proxy(auto_resize))
+        
+        # 初始化时也调整一次高度
+        auto_resize(None)
+    </script>
+</body>
+</html>
